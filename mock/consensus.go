@@ -1,19 +1,28 @@
 package main
 
 import (
-	"regent/common"
 	"regent/rpc"
+	"regent/utils"
+	"time"
+
+	"github.com/ledgerwatch/erigon/cmd/rpcdaemon/commands"
+	"github.com/ledgerwatch/erigon/common"
+	"github.com/ledgerwatch/erigon/common/hexutil"
 )
 
-var CURRENT_HEAD_STRING string = common.GENESIS_HASH
+var CURRENT_HEAD = common.HexToHash(utils.GENESIS_HASH_STRING)
 
 // Add a new block to the chain using engine_forkChoiceUpdated. Re-orgs are impossible,
 // so the last finalized block is just the previous head
-func AddBlockToChain(hash string) (*rpc.Response, error) {
-	nextState := rpc.ForkchoiceStateV1{
-		HeadBlockHash:      hash,
-		FinalizedBlockHash: CURRENT_HEAD_STRING,
-		SafeBlockHash:      CURRENT_HEAD_STRING,
+func AddBlockToChain(hash common.Hash) (*rpc.Response, error) {
+	nextState := commands.ForkChoiceState{
+		HeadHash:           hash,
+		FinalizedBlockHash: CURRENT_HEAD,
+		SafeBlockHash:      CURRENT_HEAD,
 	}
-	return EngineRpc.SendForkChoiceUpdated(&nextState, nil)
+	CURRENT_HEAD = hash
+	return EngineRpc.SendForkChoiceUpdated(&nextState, &commands.PayloadAttributes{
+		Timestamp:             hexutil.Uint64((time.Now().Add(12 * time.Second).Unix())),
+		SuggestedFeeRecipient: utils.DEV_ADDRESS,
+	})
 }

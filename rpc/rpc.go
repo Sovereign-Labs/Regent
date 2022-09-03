@@ -13,6 +13,9 @@ import (
 
 const VERSION_STRING string = "Regent/0.0.0"
 const GET_BLOCK_BY_NUMBER RpcMethod = "eth_getBlockByNumber"
+const FORK_CHOICE_UPDATED RpcMethod = "engine_forkchoiceUpdatedV1"
+const NEW_EXECUTION_PAYLOAD RpcMethod = "engine_newPayloadV1"
+const GET_EXECUTION_PAYLOAD RpcMethod = "engine_getPayloadV1"
 
 type RpcMethod string
 
@@ -70,40 +73,46 @@ func NewMessage(method RpcMethod, params ...interface{}) *Message {
 		Id:      1,
 	}
 }
-
-func (client *Client) Send(msg *Message) (*Response, error) {
+func (client *Client) SendWithTypedResponse(msg *Message, response *Response) error {
 	marshalled, err := json.Marshal(msg)
 	if err != nil {
 		log.Crit("Marshalling failed. This indicates a bug: ", err)
-		return nil, err
+		return err
 	}
+	fmt.Println(string(marshalled))
 	req, err := http.NewRequest("POST", client.endpoint, bytes.NewBuffer(marshalled))
 	if err != nil {
 		log.Crit("Creating an http request failed. This indicates a bug: ", err)
-		return nil, err
+		return err
 	}
 
 	req.Header["Content-Type"] = []string{"application/json"}
 	if client.authToken != nil {
 		tokenString, err := client.authToken.TokenString()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", tokenString))
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Error sending message to execution client: %w", err)
+		return fmt.Errorf("Error sending message to execution client: %w", err)
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("Error reading response to msg %v. %w", msg, err)
+		return fmt.Errorf("Error reading response to msg %v. %w", msg, err)
 	}
-	response := Response{}
+
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		return nil, fmt.Errorf("Error unmarshalling response to msg %v. response body %v. err %w", msg, body, err)
+		return fmt.Errorf("Error unmarshalling response to msg %v. response body %v. err %w", msg, string(body), err)
 	}
-	return &response, nil
+	return nil
+
+}
+
+func (client *Client) Send(msg *Message) (*Response, error) {
+	r := &Response{}
+	return r, client.SendWithTypedResponse(msg, r)
 }

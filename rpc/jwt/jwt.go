@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"regent/common"
+	"regent/utils"
 	"strings"
 	"time"
 
@@ -25,13 +25,13 @@ func (ethJwt *EthJwt) refresh() error {
 	// The token must use HMAC-SHA256.
 	// https://github.com/ethereum/execution-apis/blob/main/src/engine/authentication.md
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"clv": common.VERSION_STRING,
+		"clv": utils.VERSION_STRING,
 		"iat": ethJwt.issuedAt.Unix(),
 	})
 	signedString, err := token.SignedString(ethJwt.secret)
 	ethJwt.signedString = signedString
 	if err != nil {
-		return fmt.Errorf("the jwt expired but could not be refreshed. err: %w", err)
+		return fmt.Errorf("the jwt expired and could not be refreshed. err: %w", err)
 	}
 	return nil
 }
@@ -58,7 +58,7 @@ func FromSecretFile(filename string) (*EthJwt, error) {
 	if err != nil {
 		return nil, err
 	}
-	jwtSecret := common.FromHex(strings.TrimSpace(string(rawSecret)))
+	jwtSecret := utils.FromHex(strings.TrimSpace(string(rawSecret)))
 	if len(jwtSecret) != 32 {
 		return nil, errors.New("invalid JWT secret")
 	}
