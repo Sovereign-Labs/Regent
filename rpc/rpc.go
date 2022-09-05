@@ -26,6 +26,7 @@ type RetryStrategy interface {
 }
 
 type InfiniteRetryStrategy struct {
+	// The current attempt number, which is also the number of seconds to wait until the next attempt
 	attempt time.Duration
 }
 
@@ -50,6 +51,7 @@ const (
 type PayloadStatus struct {
 	Status          PayloadStatusString `json:"status"`
 	LatestValidHash common.Hash         `json:"latestValidHash"`
+	ValidationError string              `json:"validationError"`
 }
 
 type ForkChoiceUpdatedResult struct {
@@ -76,7 +78,7 @@ type Response[R any] struct {
 }
 
 // Creates a Json-rpc message with the supplied method and parameters
-func NewMessage(method RpcMethod, params ...interface{}) *Request {
+func NewRequest(method RpcMethod, params ...interface{}) *Request {
 	if params == nil {
 		params = make([]interface{}, 0)
 	}
@@ -89,6 +91,8 @@ func NewMessage(method RpcMethod, params ...interface{}) *Request {
 }
 
 // Gets a response of type R by using `client` to send the provided `request` with the given timeout and retry strategy
+// This is a function rather than a method of client to workaround this limitation of Go's generics:
+// https://go.googlesource.com/proposal/+/refs/heads/master/design/43651-type-parameters.md#No-parameterized-methods
 func getResponse[R any](client *Client, request *Request, timeout time.Duration, retries RetryStrategy) (R, error) {
 	for !retries.Done() {
 		time.Sleep(retries.Next())

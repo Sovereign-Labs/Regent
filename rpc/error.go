@@ -4,8 +4,10 @@ import "fmt"
 
 // https://github.com/ethereum/execution-apis/blob/main/src/engine/specification.md#Errors
 const (
-	CODE_INTERNAL_ERROR = -32603
-	CODE_SERVER_ERROR   = -32000
+	CODE_INTERNAL_ERROR             = -32603
+	CODE_SERVER_ERROR               = -32000
+	CODE_INVALID_PAYLOAD_ATTRIBUTES = -38003
+	CODE_INVALID_FORKCHOICE_STATE   = -38002
 )
 
 // The error from an Ethereum Json-rpc response
@@ -28,5 +30,6 @@ func IsRetryable(e error) bool {
 	if rpcErr, ok := e.(*JsonRpcError); ok {
 		return rpcErr.IsRetryable()
 	}
+	// Assume all unknown errors are retryable
 	return true
 }
