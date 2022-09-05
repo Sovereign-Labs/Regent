@@ -36,7 +36,7 @@ func (r *Regent) run() error {
 
 	for {
 		// TODO: don't bother getting a payload when this node isn't the sequencer
-		payload, err := r.EngineRpc.SendGetPayload(r.NextPayloadId)
+		payload, err := r.EngineRpc.GetPayload(r.NextPayloadId)
 		log.Info("Getting next execution payload")
 		if err != nil {
 			log.Crit("encountered an error attempting retrive the next execution payload", "err", err)
@@ -45,7 +45,7 @@ func (r *Regent) run() error {
 
 		// TODO: don't bother sending the payload to the sequencer when this node isn't the sequencer
 		log.Info("Sending next payload to execution client", "blockhash", payload.BlockHash)
-		err = r.EngineRpc.SendNewPayload(payload)
+		err = r.EngineRpc.SendExecutionPayload(payload)
 		if err != nil {
 			log.Crit("encountered an error attempting to send the payload to the execution client", "err", err)
 			return err
@@ -73,18 +73,17 @@ func (r *Regent) ExtendChainAndStartBuilder(hash common.Hash, suggestedRecipient
 		FinalizedBlockHash: r.CurrentHead,
 		SafeBlockHash:      r.CurrentHead,
 	}
-	result, err := r.EngineRpc.SendForkChoiceUpdated(&nextState, &commands.PayloadAttributes{
+	result, err := r.EngineRpc.UpdateForkChoiceAndBuildBlock(&nextState, &commands.PayloadAttributes{
 		Timestamp:             hexutil.Uint64(time.Now().Unix()),
 		SuggestedFeeRecipient: suggestedRecipient,
 	})
 	if err != nil {
-		if err.InProtocolError != nil {
+		if err.(*rpc.JsonRpcError) != nil {
 			// TODO: Handle the various expected errors
-			log.Crit("Fatal err trying to update fork choice", "err", err.InProtocolError)
+			log.Crit("Fatal err trying to update fork choice", "err", err)
 			os.Exit(1)
 		} else {
-
-			return err.Exception
+			return err
 		}
 	}
 	r.NextPayloadId = result.PayloadId
