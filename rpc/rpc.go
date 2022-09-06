@@ -70,7 +70,7 @@ type Request struct {
 }
 
 // An Ethereum Json-rpc response
-type Response[R any] struct {
+type Response[R comparable] struct {
 	JsonRPC string        `json:"jsonrpc"`
 	Result  R             `json:"result"`
 	Id      uint          `json:"id"`
@@ -93,12 +93,14 @@ func NewRequest(method RpcMethod, params ...interface{}) *Request {
 // Gets a response of type R by using `client` to send the provided `request` with the given timeout and retry strategy
 // This is a function rather than a method of client to workaround this limitation of Go's generics:
 // https://go.googlesource.com/proposal/+/refs/heads/master/design/43651-type-parameters.md#No-parameterized-methods
-func getResponse[R any](client *Client, request *Request, timeout time.Duration, retries RetryStrategy) (R, error) {
+func getResponse[R comparable](client *Client, request *Request, timeout time.Duration, retries RetryStrategy) (R, error) {
+	var err error
 	for !retries.Done() {
 		time.Sleep(retries.Next())
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		ret, err := sendRequest[R](ctx, client, request)
+		var ret R
+		ret, err = sendRequest[R](ctx, client, request)
 		if err != nil {
 			log.Warn("Error sending msg to execution client", "err", err)
 			if IsRetryable(err) {
@@ -107,22 +109,24 @@ func getResponse[R any](client *Client, request *Request, timeout time.Duration,
 		}
 		return ret, err
 	}
-	return *new(R), nil
+	return *new(R), err
 }
 
 // Sends a JSON-RPC method whose response is unmartialed into a Response with Result type R.
 // This allows the caller to specify the type for the response.Result at compile time, rather than
 // relying on runtime reflection to identify it
-func sendRequest[R any](ctx context.Context, client *Client, msg *Request) (R, error) {
+func sendRequest[R comparable](ctx context.Context, client *Client, msg *Request) (R, error) {
 	marshalled, err := json.Marshal(msg)
 	if err != nil {
-		log.Crit("Marshalling failed. This indicates a bug: ", err)
-		return *new(R), nil
+		err = ErrFrom(ERR_MARSHALLING_FAILED, err)
+		log.Crit(err.Error())
+		return *new(R), err
 	}
 	fmt.Println(string(marshalled))
 	req, err := http.NewRequest("POST", client.endpoint, bytes.NewBuffer(marshalled))
 	if err != nil {
-		log.Crit("Creating an http request failed. This indicates a bug: ", err)
+		err = ErrFrom(ERR_REQUEST_CREATION_FAILED, err)
+		log.Crit(err.Error())
 		return *new(R), err
 	}
 
@@ -130,26 +134,29 @@ func sendRequest[R any](ctx context.Context, client *Client, msg *Request) (R, e
 	if client.authToken != nil {
 		tokenString, err := client.authToken.TokenString()
 		if err != nil {
-			return *new(R), err
+			return *new(R), ErrFrom(ERR_JWT_REFRESH_FAILED, err)
 		}
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", tokenString))
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return *new(R), fmt.Errorf("Error sending message to execution client: %w", err)
+		return *new(R), ErrFrom(ERR_REQUEST_SEND_FAILED, err)
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return *new(R), fmt.Errorf("Error reading response to msg %v. %w", msg, err)
+		return *new(R), ErrFrom(ERR_RESPONSE_READ_FAILED, fmt.Errorf("Error reading response to msg %v. %w", msg, err))
 	}
 	response := Response[R]{}
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		return *new(R), fmt.Errorf("Error unmarshalling response to msg %v. response body %v. err %w", msg, string(body), err)
+		return *new(R), ErrFrom(ERR_UNMARSHALLING_FAILED, fmt.Errorf("Error unmarshalling response to msg %v. response body %v. err %w", msg, string(body), err))
 	}
 	if response.Error != nil {
 		return response.Result, response.Error
+	}
+	if response.Result == *new(R) {
+		return response.Result, ErrFrom(ERR_UNMARSHALLING_FAILED, fmt.Errorf("The response to msg %v did not contain a value of type %T. response body %v. err %w", msg, response.Result, string(body), err))
 	}
 	return response.Result, nil
 }
