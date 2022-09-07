@@ -10,7 +10,7 @@ import (
 
 type Client struct {
 	authToken *jwt.EthJwt
-	endpoint  string
+	Endpoint  string
 }
 
 var DefaultRetryStrategy = func() RetryStrategy {
@@ -19,7 +19,7 @@ var DefaultRetryStrategy = func() RetryStrategy {
 
 func NewClient(port string) Client {
 	return Client{
-		endpoint: fmt.Sprintf("http://localhost:%v", port),
+		Endpoint: fmt.Sprintf("http://localhost:%v", port),
 	}
 }
 
@@ -44,9 +44,9 @@ func (client *Client) UpdateForkChoiceAndBuildBlock(forkChoice *commands.ForkCho
 }
 
 // Passes a new `execution payload` (block) to the execution client
-func (client *Client) SendExecutionPayload(payload *commands.ExecutionPayload) error {
-	_, err := getResponse[*commands.PayloadAttributes](client, NewRequest(NEW_EXECUTION_PAYLOAD, payload), 8*time.Second, DefaultRetryStrategy())
-	return err
+func (client *Client) SendExecutionPayload(payload *commands.ExecutionPayload) (*commands.PayloadAttributes, error) {
+	resp, err := getResponse[*commands.PayloadAttributes](client, NewRequest(NEW_EXECUTION_PAYLOAD, payload), 8*time.Second, DefaultRetryStrategy())
+	return resp, err
 }
 
 // Requests a new block ("execution payload") from the client. This method will fail if

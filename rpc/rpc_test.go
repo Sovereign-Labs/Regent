@@ -2,69 +2,32 @@ package rpc
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
-	"net/http/httptest"
+	"regent/utils/test"
 	"testing"
 	"time"
 
 	"github.com/ledgerwatch/erigon/cmd/rpcdaemon/commands"
 )
 
-var handler = MockHandler{}
-var rpcClient = NewClientWithJwt("8545", make([]byte, 30))
-var testServer = httptest.NewServer(&handler)
-
-type NoRetryStrategy struct {
-	HasTried bool
-}
-
-func (s *NoRetryStrategy) Next() time.Duration {
-	return time.Duration(0)
-}
-
-func (s *NoRetryStrategy) Done() bool {
-	if !s.HasTried {
-		s.HasTried = true
-		return false
-	}
-	return true
-}
+var TestRpcClient = NewClientWithJwt("8545", make([]byte, 32))
 
 func init() {
-	rpcClient.endpoint = testServer.URL
-}
-
-type MockHandler struct {
-	Response    []byte
-	HandlerFunc func(resp http.ResponseWriter, req *http.Request)
-}
-
-func (m *MockHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
-	if m.HandlerFunc != nil {
-		m.HandlerFunc(resp, req)
-		return
-	}
-	resp.WriteHeader(200)
-	resp.Write(m.Response)
-}
-
-func ErrorIs(err error, kind string) bool {
-	return errors.Is(err, errors.New(kind))
+	TestRpcClient.Endpoint = test.TestServer.URL
 }
 
 func TestUpdateForkChoice_emptyResponse(t *testing.T) {
-	handler.Response = make([]byte, 0)
-	_, err := rpcClient.UpdateForkChoice(&commands.ForkChoiceState{})
-	if !ErrorIs(err, ERR_UNMARSHALLING_FAILED) {
+	test.TestHandler.Response = make([]byte, 0)
+	_, err := TestRpcClient.UpdateForkChoice(&commands.ForkChoiceState{})
+	if !test.ErrorIs(err, ERR_UNMARSHALLING_FAILED) {
 		t.Fatalf("UpdateForkChoice - expected %v, got %v", ERR_UNMARSHALLING_FAILED, err)
 	}
 }
 
 func TestUpdateForkChoice_wrongResponseMessage(t *testing.T) {
-	handler.Response = []byte(`{"jsonrpc":"2.0","method":"engine_forkchoiceUpdatedV1","params":[{"headBlockHash":"0x0000000000000000000000000000000000000000000000000000000000000000","safeBlockHash":"0x0000000000000000000000000000000000000000000000000000000000000000","finalizedBlockHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}],"id":1}`)
-	_, err := rpcClient.UpdateForkChoice(&commands.ForkChoiceState{})
-	if !ErrorIs(err, ERR_UNMARSHALLING_FAILED) {
+	test.TestHandler.Response = []byte(`{"jsonrpc":"2.0","method":"engine_forkchoiceUpdatedV1","params":[{"headBlockHash":"0x0000000000000000000000000000000000000000000000000000000000000000","safeBlockHash":"0x0000000000000000000000000000000000000000000000000000000000000000","finalizedBlockHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}],"id":1}`)
+	_, err := TestRpcClient.UpdateForkChoice(&commands.ForkChoiceState{})
+	if !test.ErrorIs(err, ERR_UNMARSHALLING_FAILED) {
 		t.Fatalf("UpdateForkChoice - expected %v, got %v", ERR_UNMARSHALLING_FAILED, err)
 	}
 }
@@ -72,14 +35,14 @@ func TestUpdateForkChoice_wrongResponseMessage(t *testing.T) {
 func TestUpdateForkChoice_invalidEndpoint(t *testing.T) {
 	// Disable retries and override the handler function
 	previousRetryStrategy := DefaultRetryStrategy
-	DefaultRetryStrategy = func() RetryStrategy { return &NoRetryStrategy{} }
-	rpcClient.endpoint = "not-a-url"
+	DefaultRetryStrategy = func() RetryStrategy { return &test.NoRetryStrategy{} }
+	TestRpcClient.Endpoint = "not-a-url"
 	defer func() {
 		DefaultRetryStrategy = previousRetryStrategy
-		rpcClient.endpoint = testServer.URL
+		TestRpcClient.Endpoint = test.TestServer.URL
 	}()
-	_, err := rpcClient.UpdateForkChoice(&commands.ForkChoiceState{})
-	if !ErrorIs(err, ERR_REQUEST_SEND_FAILED) {
+	_, err := TestRpcClient.UpdateForkChoice(&commands.ForkChoiceState{})
+	if !test.ErrorIs(err, ERR_REQUEST_SEND_FAILED) {
 		t.Fatalf("UpdateForkChoice - expected %v, got %v", ERR_REQUEST_SEND_FAILED, err)
 	}
 }
@@ -87,18 +50,18 @@ func TestUpdateForkChoice_invalidEndpoint(t *testing.T) {
 func TestUpdateForkChoice_unexpectedEOF(t *testing.T) {
 	// Disable retries and override the handler function
 	previousRetryStrategy := DefaultRetryStrategy
-	DefaultRetryStrategy = func() RetryStrategy { return &NoRetryStrategy{} }
-	handler.HandlerFunc = func(resp http.ResponseWriter, req *http.Request) {
-		testServer.CloseClientConnections()
+	DefaultRetryStrategy = func() RetryStrategy { return &test.NoRetryStrategy{} }
+	test.TestHandler.HandlerFunc = func(resp http.ResponseWriter, req *http.Request) {
+		test.TestServer.CloseClientConnections()
 	}
 	// Restore state after the test ends
 	defer func() {
 		DefaultRetryStrategy = previousRetryStrategy
-		handler.HandlerFunc = nil
+		test.TestHandler.HandlerFunc = nil
 	}()
 
-	_, err := rpcClient.UpdateForkChoice(&commands.ForkChoiceState{})
-	if !ErrorIs(err, ERR_RESPONSE_READ_FAILED) {
+	_, err := TestRpcClient.UpdateForkChoice(&commands.ForkChoiceState{})
+	if !test.ErrorIs(err, ERR_RESPONSE_READ_FAILED) {
 		t.Fatalf("UpdateForkChoice - expected %v, got %v", ERR_RESPONSE_READ_FAILED, err)
 	}
 }
@@ -120,8 +83,8 @@ func TestInfiniteRetryStrategy_isLinearWithCap(t *testing.T) {
 
 func TestUpdateForkChoice_success(t *testing.T) {
 	resp, _ := json.Marshal(Response[ForkChoiceUpdatedResult]{})
-	handler.Response = []byte(resp)
-	_, err := rpcClient.UpdateForkChoice(&commands.ForkChoiceState{})
+	test.TestHandler.Response = []byte(resp)
+	_, err := TestRpcClient.UpdateForkChoice(&commands.ForkChoiceState{})
 	if err != nil {
 		t.Fatalf("UpdateForkChoice - expected %v, got %v", nil, err)
 	}
@@ -129,8 +92,8 @@ func TestUpdateForkChoice_success(t *testing.T) {
 
 func TestUpdateForkChoiceAndBuildBlock_success(t *testing.T) {
 	resp, _ := json.Marshal(Response[ForkChoiceUpdatedResult]{})
-	handler.Response = []byte(resp)
-	_, err := rpcClient.UpdateForkChoiceAndBuildBlock(&commands.ForkChoiceState{}, &commands.PayloadAttributes{})
+	test.TestHandler.Response = []byte(resp)
+	_, err := TestRpcClient.UpdateForkChoiceAndBuildBlock(&commands.ForkChoiceState{}, &commands.PayloadAttributes{})
 	if err != nil {
 		t.Fatalf("UpdateForkChoiceAndBuildBlock - expected %v, got %v", nil, err)
 	}
@@ -138,17 +101,17 @@ func TestUpdateForkChoiceAndBuildBlock_success(t *testing.T) {
 
 func TestUpdateForkChoiceAndBuildBlock_invalidResponse(t *testing.T) {
 	resp, _ := json.Marshal(Response[*commands.ExecutionPayload]{})
-	handler.Response = []byte(resp)
-	_, err := rpcClient.UpdateForkChoiceAndBuildBlock(&commands.ForkChoiceState{}, &commands.PayloadAttributes{})
-	if !ErrorIs(err, ERR_UNMARSHALLING_FAILED) {
+	test.TestHandler.Response = []byte(resp)
+	_, err := TestRpcClient.UpdateForkChoiceAndBuildBlock(&commands.ForkChoiceState{}, &commands.PayloadAttributes{})
+	if !test.ErrorIs(err, ERR_UNMARSHALLING_FAILED) {
 		t.Fatalf("UpdateForkChoiceAndBuildBlock - expected %v, got %v", ERR_UNMARSHALLING_FAILED, err)
 	}
 }
 
 func TestSendExecutionPayload_success(t *testing.T) {
 	resp, _ := json.Marshal(Response[commands.PayloadAttributes]{})
-	handler.Response = []byte(resp)
-	err := rpcClient.SendExecutionPayload(&commands.ExecutionPayload{})
+	test.TestHandler.Response = []byte(resp)
+	_, err := TestRpcClient.SendExecutionPayload(&commands.ExecutionPayload{})
 	if err != nil {
 		t.Fatalf("SendExecutionPayload - expected %v, got %v", nil, err)
 	}
@@ -156,9 +119,9 @@ func TestSendExecutionPayload_success(t *testing.T) {
 
 func TestSendExecutionPayload_invalidResponse(t *testing.T) {
 	resp, _ := json.Marshal(Response[*commands.ExecutionPayload]{})
-	handler.Response = []byte(resp)
-	err := rpcClient.SendExecutionPayload(&commands.ExecutionPayload{})
-	if !ErrorIs(err, ERR_UNMARSHALLING_FAILED) {
+	test.TestHandler.Response = []byte(resp)
+	_, err := TestRpcClient.SendExecutionPayload(&commands.ExecutionPayload{})
+	if !test.ErrorIs(err, ERR_UNMARSHALLING_FAILED) {
 		t.Fatalf("SendExecutionPayload - expected %v, got %v", ERR_UNMARSHALLING_FAILED, err)
 	}
 }
@@ -167,8 +130,8 @@ func TestGetPayload_success(t *testing.T) {
 	resp, _ := json.Marshal(Response[*commands.ExecutionPayload]{
 		Result: new(commands.ExecutionPayload),
 	})
-	handler.Response = []byte(resp)
-	_, err := rpcClient.GetPayload("0x0000000000000000")
+	test.TestHandler.Response = []byte(resp)
+	_, err := TestRpcClient.GetPayload("0x0000000000000000")
 	if err != nil {
 		t.Fatalf("GetPayload - expected %v, got %v", nil, err)
 	}
@@ -176,9 +139,9 @@ func TestGetPayload_success(t *testing.T) {
 
 func TestGetPayload_invalidResponse(t *testing.T) {
 	resp, _ := json.Marshal(Response[int]{})
-	handler.Response = []byte(resp)
-	result, err := rpcClient.GetPayload("0x0000000000000000")
-	if !ErrorIs(err, ERR_UNMARSHALLING_FAILED) {
+	test.TestHandler.Response = []byte(resp)
+	result, err := TestRpcClient.GetPayload("0x0000000000000000")
+	if !test.ErrorIs(err, ERR_UNMARSHALLING_FAILED) {
 		t.Error("result: ", result)
 		t.Fatalf("GetPayload - expected %v, got %v", ERR_UNMARSHALLING_FAILED, err)
 	}

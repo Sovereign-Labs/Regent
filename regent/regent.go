@@ -15,13 +15,16 @@ import (
 )
 
 var (
-	ERR_NO_PAYLOAD_STATUS        = errors.New("the execution client failed to return a payload status")
+	ERR_INVALID_PAYLOAD_STATUS   = errors.New("The Payload status was not a valid option. This indicates a client bug")
 	ERR_INVALID_PAYLOAD          = errors.New("the execution client was unable to build a block because the fork choice update payload was invalid")
 	ERR_EXECUTION_CLIENT_SYNCING = errors.New("the execution client was unable to build a block because it is syncing")
 	ERR_INVALID_PAYLOAD_ID       = errors.New("the execution client returned an invalid payload ID")
 	ERR_INVALID_TIMESTAMP        = errors.New("the consensus client provided an invalid timestamp for the payload to be built")
-	ERR_INVALID_FORKCHOICE       = errors.New("the consensus client provided an forkchoice update")
-	ERR_FORKCHOICE_NOT_UPDATED   = errors.New("the fork choice could not be updated")
+	ERR_INVALID_FORKCHOICE       = errors.New("the consensus client provided an invalid forkchoice update")
+	// Test against this error when looking for ForkChoiceUpdateErrors
+	ERR_FORKCHOICE_NOT_UPDATED = errors.New("the fork choice could not be updated")
+	// Test against this error when looking for PayloadBuildErrors
+	ERR_PAYLOAD_NOT_BUILT = errors.New("the execution client was unable to build a valid payload")
 )
 
 type ForkChoiceUpdateError struct {
@@ -33,10 +36,30 @@ func (e *ForkChoiceUpdateError) Error() string {
 }
 
 func (e *ForkChoiceUpdateError) Is(err error) bool {
-	return err == ERR_FORKCHOICE_NOT_UPDATED
+	// All forkchoice update errors are also payload build errors
+	return errors.Is(err, ERR_FORKCHOICE_NOT_UPDATED) || errors.Is(err, ERR_PAYLOAD_NOT_BUILT)
 }
 
 func (e *ForkChoiceUpdateError) Unwrap() error {
+	return e.reason
+}
+
+// PayloadBuildErrors are a superset of ForkChoiceUpdateErrors.
+// They can occur either because the forkchoice was not updated or because
+// some payload attribute was incorrect.
+type PayloadBuildError struct {
+	reason error
+}
+
+func (e *PayloadBuildError) Error() string {
+	return fmt.Sprintf("%s: %s", ERR_PAYLOAD_NOT_BUILT, e.reason)
+}
+
+func (e *PayloadBuildError) Is(err error) bool {
+	return errors.Is(err, ERR_PAYLOAD_NOT_BUILT)
+}
+
+func (e *PayloadBuildError) Unwrap() error {
 	return e.reason
 }
 
@@ -96,7 +119,7 @@ func (r *Regent) run() error {
 
 		// TODO: don't bother sending the payload to the sequencer when this node isn't the sequencer
 		log.Info("Sending next payload to execution client", "blockhash", payload.BlockHash)
-		err = r.EngineRpc.SendExecutionPayload(payload)
+		_, err = r.EngineRpc.SendExecutionPayload(payload)
 		if err != nil {
 			log.Crit("encountered an error attempting to send the payload to the execution client", "err", err)
 		}
@@ -117,27 +140,37 @@ func (r *Regent) run() error {
 
 // Check whether the fork choice update was applied. Return an error if not.
 func validateForkChoiceUpdate(err error, result *rpc.ForkChoiceUpdatedResult, nextState *commands.ForkChoiceState) error {
-	// If there was no error, the fork choice was updated
-	if err == nil {
-		return nil
-	}
-	// If the error was an in protocol error, then the error code tells us whether the the fork choice was
-	// updated: "invalid payload attributes" don't prevent a fork choice from being applied, but all other errors do
-	if rpcErr, ok := err.(*rpc.JsonRpcError); ok {
-		switch rpcErr.Code {
-		case rpc.CODE_INVALID_PAYLOAD_ATTRIBUTES:
-			return nil
-		case rpc.CODE_INVALID_FORKCHOICE_STATE:
-			return fmt.Errorf("%s: %w", ERR_INVALID_FORKCHOICE, err)
-		default:
-			return err
+	if err != nil {
+		// If the error was an in protocol error, then the error code tells us whether the the fork choice was
+		// updated: "invalid payload attributes" don't prevent a fork choice from being applied, but all other errors do
+		if rpcErr, ok := err.(*rpc.JsonRpcError); ok {
+			switch rpcErr.Code {
+			case rpc.CODE_INVALID_PAYLOAD_ATTRIBUTES:
+				return nil
+			case rpc.CODE_INVALID_FORKCHOICE_STATE:
+				return ERR_INVALID_FORKCHOICE
+			default:
+				return err
+			}
 		}
+		// If the error is not a defined protocol error, assume the fork choice was not updated
+		return fmt.Errorf("Unknown error prevented a fork choice update: %w", err)
 	}
-	if result != nil && result.PayloadStatus.Status == rpc.SYNCING_PAYLOAD {
+
+	// If there was no error, the payload status.status field tells us whether the update succeeded
+	if result.PayloadStatus == nil {
+		return ERR_INVALID_PAYLOAD_STATUS
+	}
+	switch result.PayloadStatus.Status {
+	case rpc.VALID_PAYLOAD:
+		return nil
+	case rpc.INVALID_PAYLOAD:
+		return ERR_INVALID_PAYLOAD
+	case rpc.SYNCING_PAYLOAD:
 		return ERR_EXECUTION_CLIENT_SYNCING
+	default:
+		return ERR_INVALID_PAYLOAD_STATUS
 	}
-	// Finally, if the error is not a defined protocol error, assume the fork choice was not updated
-	return fmt.Errorf("Unknown error prevented a fork choice update: %w", err)
 }
 
 // Add a new block to the chain using engine_forkChoiceUpdated. Re-orgs are impossible,
@@ -171,29 +204,12 @@ func (r *Regent) tryExtendChainAndStartBuilder(newHead common.Hash, suggestedRec
 	// If `err` is not nil but we reached this point, the error must have been "invalid payload attributes".
 	if err != nil {
 		log.Crit(ERR_INVALID_TIMESTAMP.Error(), "err", err, "forkChoiceState", nextState)
-		return ERR_INVALID_TIMESTAMP
+		return &PayloadBuildError{ERR_INVALID_TIMESTAMP}
 	}
-
-	// The payload status should never be null, but we check anyway and log an error rather than crashing
-	if result.PayloadStatus == nil {
-		log.Crit("Execution client failed to return a payload status. This is likely an execution client bug.", "err", err, "response", result)
-		return ERR_NO_PAYLOAD_STATUS
+	// Sanity check that the payload ID looks like a valid DATA[8] object
+	if len(result.PayloadId) != 18 {
+		log.Crit("The execution client returned an invalid payload id", "forkChoiceState", nextState, "response", result)
+		return &PayloadBuildError{ERR_INVALID_PAYLOAD_ID}
 	}
-
-	switch result.PayloadStatus.Status {
-	case rpc.INVALID_PAYLOAD:
-		log.Crit("Fork choice update was invalid", "forkChoiceState", nextState, "response", result)
-		return ERR_INVALID_PAYLOAD
-	case rpc.VALID_PAYLOAD:
-		if len(result.PayloadId) != 18 {
-			log.Crit("The execution client returned an invalid payload id", "forkChoiceState", nextState, "response", result)
-			return ERR_INVALID_PAYLOAD_ID
-		}
-		r.NextPayloadId = result.PayloadId
-		return nil
-	// We check for syncing when we validate that the fork choice update was applied, so all cases have been covered
-	default:
-		log.Crit("The payload status was not one of `Valid, Invalid, Syncing`. This indicates a client bug.", "forkChoiceState", nextState, "response", result)
-		return fmt.Errorf("Unreachable: This indicates a client bug")
-	}
+	return nil
 }

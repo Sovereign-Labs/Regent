@@ -50,8 +50,8 @@ const (
 
 type PayloadStatus struct {
 	Status          PayloadStatusString `json:"status"`
-	LatestValidHash common.Hash         `json:"latestValidHash"`
-	ValidationError string              `json:"validationError"`
+	LatestValidHash *common.Hash        `json:"latestValidHash"`
+	ValidationError *string             `json:"validationError"`
 }
 
 type ForkChoiceUpdatedResult struct {
@@ -123,7 +123,7 @@ func sendRequest[R comparable](ctx context.Context, client *Client, msg *Request
 		return *new(R), err
 	}
 	fmt.Println(string(marshalled))
-	req, err := http.NewRequest("POST", client.endpoint, bytes.NewBuffer(marshalled))
+	req, err := http.NewRequest("POST", client.Endpoint, bytes.NewBuffer(marshalled))
 	if err != nil {
 		err = ErrFrom(ERR_REQUEST_CREATION_FAILED, err)
 		log.Crit(err.Error())
