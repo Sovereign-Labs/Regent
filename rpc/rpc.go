@@ -25,6 +25,7 @@ type RetryStrategy interface {
 	Done() bool
 }
 
+// Retry forever with linear backoff, capped at 30 seconds between attempts
 type InfiniteRetryStrategy struct {
 	// The current attempt number, which is also the number of seconds to wait until the next attempt
 	attempt time.Duration
@@ -40,6 +41,21 @@ func (s *InfiniteRetryStrategy) Next() time.Duration {
 
 func (s *InfiniteRetryStrategy) Done() bool {
 	return false
+}
+
+// Retry 5 times with linear backoff
+type SimpleRetryStrategy struct {
+	// The current attempt number, which is also the number of seconds to wait until the next attempt
+	attempt time.Duration
+}
+
+func (s *SimpleRetryStrategy) Next() time.Duration {
+	s.attempt += time.Second
+	return s.attempt - time.Second
+}
+
+func (s *SimpleRetryStrategy) Done() bool {
+	return s.attempt > 5
 }
 
 const (

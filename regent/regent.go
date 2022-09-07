@@ -211,5 +211,6 @@ func (r *Regent) tryExtendChainAndStartBuilder(newHead common.Hash, suggestedRec
 		log.Crit("The execution client returned an invalid payload id", "forkChoiceState", nextState, "response", result)
 		return &PayloadBuildError{ERR_INVALID_PAYLOAD_ID}
 	}
+	r.NextPayloadId = result.PayloadId
 	return nil
 }

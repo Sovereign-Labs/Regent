@@ -14,7 +14,7 @@ type Client struct {
 }
 
 var DefaultRetryStrategy = func() RetryStrategy {
-	return &InfiniteRetryStrategy{}
+	return &SimpleRetryStrategy{}
 }
 
 func NewClient(port string) Client {
