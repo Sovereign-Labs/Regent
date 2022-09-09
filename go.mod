@@ -100,6 +100,7 @@ require (
 	github.com/quasilyte/go-ruleguard/dsl v0.3.21 // indirect
 	github.com/rs/dnscache v0.0.0-20211102005908-e0241e321417 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/syndtr/goleveldb v1.0.0 // indirect
 	github.com/tendermint/go-amino v0.14.1 // indirect
 	github.com/tendermint/tendermint v0.31.11 // indirect
 	github.com/tidwall/btree v1.3.1 // indirect
