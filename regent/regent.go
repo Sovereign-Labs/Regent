@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regent/db"
 	"regent/rpc"
 	"regent/rpc/jwt"
 	"time"
@@ -15,7 +16,7 @@ import (
 )
 
 var (
-	ERR_INVALID_PAYLOAD_STATUS   = errors.New("The Payload status was not a valid option. This indicates a client bug")
+	ERR_INVALID_PAYLOAD_STATUS   = errors.New("the Payload status was not a valid option. This indicates a client bug")
 	ERR_INVALID_PAYLOAD          = errors.New("the execution client was unable to build a block because the fork choice update payload was invalid")
 	ERR_EXECUTION_CLIENT_SYNCING = errors.New("the execution client was unable to build a block because it is syncing")
 	ERR_INVALID_PAYLOAD_ID       = errors.New("the execution client returned an invalid payload ID")
@@ -65,9 +66,11 @@ func (e *PayloadBuildError) Unwrap() error {
 
 type Regent struct {
 	CurrentHead        common.Hash
+	BlockNumber        uint
 	NextPayloadId      string
 	EngineRpc          rpc.Client
 	BeneficiaryAddress common.Address
+	DB                 db.SimpleDb
 }
 
 func Initialize() (*Regent, error) {
@@ -78,6 +81,10 @@ func Initialize() (*Regent, error) {
 		return nil, err
 	}
 	r.EngineRpc.SetAuthToken(token)
+	r.DB, err = db.NewLevelDB(DEFAULT_REGENT_DATADIR)
+	if err != nil {
+		return nil, err
+	}
 	return r, nil
 }
 
@@ -176,6 +183,7 @@ func validateForkChoiceUpdate(err error, result *rpc.ForkChoiceUpdatedResult, ne
 // Add a new block to the chain using engine_forkChoiceUpdated. Re-orgs are impossible,
 // so the last finalized block is just the previous head
 func (r *Regent) ExtendChainAndStartBuilder(newHead common.Hash, suggestedRecipient common.Address) error {
+	r.DB.Put(db.RollupBlockHashToNumber, newHead[:], db.VarUint(BlockNumber+1))
 	return r.tryExtendChainAndStartBuilder(newHead, suggestedRecipient)
 }
 
@@ -200,6 +208,7 @@ func (r *Regent) tryExtendChainAndStartBuilder(newHead common.Hash, suggestedRec
 		return &ForkChoiceUpdateError{forkChoiceErr}
 	}
 	r.SetCurrentHead(newHead)
+	r.BlockNumber += 1
 
 	// If `err` is not nil but we reached this point, the error must have been "invalid payload attributes".
 	if err != nil {

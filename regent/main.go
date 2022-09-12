@@ -10,12 +10,6 @@ import (
 	"github.com/ledgerwatch/log/v3"
 )
 
-const DEFAULT_ERIGON_DATADIR = "/Users/prestonevans/sovereign"
-const JWT_SECRET_FILENAME = "jwt.hex"
-
-var ErigonDatadir = DEFAULT_ERIGON_DATADIR
-var EngineRpcPort string = "8551"
-
 func main() {
 	log.Root().SetHandler(log.LvlFilterHandler(log.LvlInfo, log.StderrHandler))
 
@@ -23,6 +17,7 @@ func main() {
 	if err != nil {
 		log.Crit("Fatal error attempting to start app", "err", err)
 	}
+	defer regent.DB.Close()
 
 	// Finalize the genesis block and start the building process
 	err = regent.ExtendChainAndStartBuilder(common.HexToHash(utils.GENESIS_HASH_STRING), utils.DEV_ADDRESS)

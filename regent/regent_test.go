@@ -116,7 +116,7 @@ func TestExtendChainAndStartBuilder_invalidPayloadStatus(t *testing.T) {
 	test.TestHandler.Response = []byte(response)
 
 	err := TestRegent.ExtendChainAndStartBuilder(common.HexToHash(utils.GENESIS_HASH_STRING), utils.DEV_ADDRESS)
-	if !errors.Is(err, ERR_INVALID_PAYLOAD_STATUS) {
+	if !errors.Is(err, ERR_INVALID_PAYLOAD_STATUS) || !errors.Is(err, ERR_FORKCHOICE_NOT_UPDATED) || !errors.Is(err, ERR_PAYLOAD_NOT_BUILT) {
 		t.Fatalf("ExtendChainAndStartBuilder - expected: %v, got: %v", ERR_INVALID_PAYLOAD_STATUS, err)
 	}
 }

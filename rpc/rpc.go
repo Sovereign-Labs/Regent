@@ -13,13 +13,17 @@ import (
 	"github.com/ledgerwatch/log/v3"
 )
 
+type RpcMethod string
+
 const VERSION_STRING string = "Regent/0.0.0"
 const GET_BLOCK_BY_NUMBER RpcMethod = "eth_getBlockByNumber"
 const FORK_CHOICE_UPDATED RpcMethod = "engine_forkchoiceUpdatedV1"
 const NEW_EXECUTION_PAYLOAD RpcMethod = "engine_newPayloadV1"
 const GET_EXECUTION_PAYLOAD RpcMethod = "engine_getPayloadV1"
 
-type PayloadStatusString string
+// Defines a strategy for retrying a fallible operation like an RPC request
+// After each failed attempt, the caller will call `Next` and sleep for the specified duration
+// until a call to `Done` returns true, at which point the caller will exit.
 type RetryStrategy interface {
 	Next() time.Duration
 	Done() bool
@@ -36,7 +40,7 @@ func (s *InfiniteRetryStrategy) Next() time.Duration {
 		return 30 * time.Second
 	}
 	s.attempt += time.Second
-	return s.attempt - time.Second
+	return s.attempt
 }
 
 func (s *InfiniteRetryStrategy) Done() bool {
@@ -51,12 +55,14 @@ type SimpleRetryStrategy struct {
 
 func (s *SimpleRetryStrategy) Next() time.Duration {
 	s.attempt += time.Second
-	return s.attempt - time.Second
+	return s.attempt
 }
 
 func (s *SimpleRetryStrategy) Done() bool {
-	return s.attempt > 5
+	return s.attempt >= 5
 }
+
+type PayloadStatusString string
 
 const (
 	VALID_PAYLOAD   PayloadStatusString = "VALID"
@@ -74,8 +80,6 @@ type ForkChoiceUpdatedResult struct {
 	PayloadStatus *PayloadStatus `json:"payloadStatus"`
 	PayloadId     string         `json:"payloadId"`
 }
-
-type RpcMethod string
 
 // An Ethereum Json-rpc message
 type Request struct {
@@ -111,15 +115,16 @@ func NewRequest(method RpcMethod, params ...interface{}) *Request {
 // https://go.googlesource.com/proposal/+/refs/heads/master/design/43651-type-parameters.md#No-parameterized-methods
 func getResponse[R comparable](client *Client, request *Request, timeout time.Duration, retries RetryStrategy) (R, error) {
 	var err error
-	for !retries.Done() {
-		time.Sleep(retries.Next())
+	for done := false; !done; done = retries.Done() {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
+
 		var ret R
 		ret, err = sendRequest[R](ctx, client, request)
 		if err != nil {
 			log.Warn("Error sending msg to execution client", "err", err)
 			if IsRetryable(err) {
+				time.Sleep(retries.Next())
 				continue
 			}
 		}
@@ -128,7 +133,7 @@ func getResponse[R comparable](client *Client, request *Request, timeout time.Du
 	return *new(R), err
 }
 
-// Sends a JSON-RPC method whose response is unmartialed into a Response with Result type R.
+// Sends a JSON-RPC method whose response is unmarshalled into a Response with Result type R.
 // This allows the caller to specify the type for the response.Result at compile time, rather than
 // relying on runtime reflection to identify it
 func sendRequest[R comparable](ctx context.Context, client *Client, msg *Request) (R, error) {
@@ -138,7 +143,7 @@ func sendRequest[R comparable](ctx context.Context, client *Client, msg *Request
 		log.Crit(err.Error())
 		return *new(R), err
 	}
-	fmt.Println(string(marshalled))
+	log.Trace("sending message", "msg", string(marshalled))
 	req, err := http.NewRequest("POST", client.Endpoint, bytes.NewBuffer(marshalled))
 	if err != nil {
 		err = ErrFrom(ERR_REQUEST_CREATION_FAILED, err)
@@ -150,7 +155,7 @@ func sendRequest[R comparable](ctx context.Context, client *Client, msg *Request
 	if client.authToken != nil {
 		tokenString, err := client.authToken.TokenString()
 		if err != nil {
-			return *new(R), ErrFrom(ERR_JWT_REFRESH_FAILED, err)
+			return *new(R), ErrFrom(ERR_TOKEN_STRING_RETRIEVAL_FAILED, err)
 		}
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", tokenString))
 	}

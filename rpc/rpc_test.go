@@ -25,6 +25,7 @@ func TestUpdateForkChoice_emptyResponse(t *testing.T) {
 }
 
 func TestUpdateForkChoice_wrongResponseMessage(t *testing.T) {
+	// Return request message instead of response
 	test.TestHandler.Response = []byte(`{"jsonrpc":"2.0","method":"engine_forkchoiceUpdatedV1","params":[{"headBlockHash":"0x0000000000000000000000000000000000000000000000000000000000000000","safeBlockHash":"0x0000000000000000000000000000000000000000000000000000000000000000","finalizedBlockHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}],"id":1}`)
 	_, err := TestRpcClient.UpdateForkChoice(&commands.ForkChoiceState{})
 	if !test.ErrorIs(err, ERR_UNMARSHALLING_FAILED) {

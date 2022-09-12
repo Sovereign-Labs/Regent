@@ -10,19 +10,13 @@ import (
 var TestHandler = MockHandler{}
 var TestServer = httptest.NewServer(&TestHandler)
 
-type NoRetryStrategy struct {
-	HasTried bool
-}
+type NoRetryStrategy struct{}
 
 func (s *NoRetryStrategy) Next() time.Duration {
 	return time.Duration(0)
 }
 
 func (s *NoRetryStrategy) Done() bool {
-	if !s.HasTried {
-		s.HasTried = true
-		return false
-	}
 	return true
 }
 
