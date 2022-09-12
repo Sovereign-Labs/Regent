@@ -14,12 +14,12 @@ const (
 )
 
 const (
-	ERR_MARSHALLING_FAILED      = "Marshalling failed. This indicates a consensus client bug"
-	ERR_REQUEST_CREATION_FAILED = "HTTP Request creation failed. This indicates a client bug"
-	ERR_JWT_REFRESH_FAILED      = "The engine JWT could not be refreshed"
-	ERR_REQUEST_SEND_FAILED     = "An error was encountered while sending the http request"
-	ERR_RESPONSE_READ_FAILED    = "An error was encountered while sending the http request"
-	ERR_UNMARSHALLING_FAILED    = "Unmarshalling failed"
+	ERR_TOKEN_STRING_RETRIEVAL_FAILED = "could not retrieve the engine JWT"
+	ERR_MARSHALLING_FAILED            = "marshalling failed. This indicates a consensus client bug"
+	ERR_REQUEST_CREATION_FAILED       = "HTTP Request creation failed. This indicates a client bug"
+	ERR_REQUEST_SEND_FAILED           = "an error was encountered while sending the http request"
+	ERR_RESPONSE_READ_FAILED          = "an error was encountered while sending the http request"
+	ERR_UNMARSHALLING_FAILED          = "unmarshalling failed"
 )
 
 type MaybeRetryable interface {

@@ -11,6 +11,8 @@ import (
 	"github.com/golang-jwt/jwt"
 )
 
+const ERR_JWT_REFRESH_FAILED = "the JWT could not be refreshed"
+
 type EthJwt struct {
 	issuedAt     time.Time
 	signedString string
@@ -41,7 +43,7 @@ func (token *EthJwt) TokenString() (string, error) {
 	if time.Since(token.issuedAt) > time.Second*55 {
 		err := token.refresh()
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("%s: %w", ERR_JWT_REFRESH_FAILED, err)
 		}
 	}
 	return token.signedString, nil
@@ -62,7 +64,5 @@ func FromSecretFile(filename string) (*EthJwt, error) {
 	if len(jwtSecret) != 32 {
 		return nil, errors.New("invalid JWT secret")
 	}
-	return &EthJwt{
-		secret: jwtSecret,
-	}, nil
+	return FromSecret(jwtSecret), nil
 }
