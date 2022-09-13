@@ -27,14 +27,52 @@ type SimpleDb interface {
 	kv.Deleter
 	kv.Closer
 }
-type DbIterator interface {
-	Value() []byte
+type Iterator interface {
+	// First moves the iterator to the first key/value pair. If the iterator
+	// only contains one key/value pair then First and Last would move
+	// to the same key/value pair.
+	// Returns false if and only if the iterator is empty
+	First() bool
+
+	// Last moves the iterator to the last key/value pair. If the iterator
+	// only contains one key/value pair then First and Last would moves
+	// to the same key/value pair.
+	// Returns false if and only if the iterator is empty
+	Last() bool
+
+	// Seek moves the iterator to the first key/value pair whose key is greater
+	// than or equal to the given key.
+	// Returns true only if such a key exists
+	//
+	// It is safe to modify the contents of the argument after Seek returns.
+	Seek(key []byte) bool
+
+	// Next moves the iterator to the next key/value pair.
+	// Returns false if the iterator is exhausted.
 	Next() bool
+
+	// Prev moves the iterator to the previous key/value pair.
+	// Returns false if the iterator is exhausted.
+	Prev() bool
+
+	// Key returns the key of the current key/value pair, or nil if done.
+	// The caller should not modify the contents of the returned slice, and
+	// its contents may change on the next call to the iterator
+	Key() []byte
+
+	// Value returns the value of the current key/value pair, or nil if done.
+	// The caller should not modify the contents of the returned slice, and
+	// its contents may change on the next call to the iterator
+	Value() []byte
+
+	// Releases any resources held by this iterator. Callers must invoke this method
+	// before dropping the iterator
+	Release()
 }
 
 type RangeDb interface {
 	SimpleDb
-	GetRange(table string, from []byte, to []byte) DbIterator
+	GetRange(table string, from []byte, to []byte) Iterator
 }
 
 type MemDb struct {

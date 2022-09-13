@@ -13,6 +13,7 @@ var defaultWriteOptions = &opt.WriteOptions{}
 
 // A simple wrapper over the levelDB package.
 // The underlying DB can be read and written to concurrently.
+// Implements the SimpleDb and RangeDb interfaces.
 type LevelDB struct {
 	inner *leveldb.DB
 }
@@ -40,7 +41,7 @@ func (db *LevelDB) Close() {
 // The returned slice is a copy, so it is safe to modify the contents of the returned slice.
 // It is safe to modify the contents of the argument after Get returns.
 func (db *LevelDB) Get(table string, key []byte) ([]byte, error) {
-	return db.inner.Get(KeyFor(table, key), defaultReadOptions)
+	return db.inner.Get(keyFor(table, key), defaultReadOptions)
 }
 
 // Put sets the value for the given key. It overwrites any previous value for that key;
@@ -48,28 +49,30 @@ func (db *LevelDB) Get(table string, key []byte) ([]byte, error) {
 // Set the NoWriteMerge option to true to disable this behavior.
 // It is safe to modify the contents of the arguments after Put returns but not before.
 func (db *LevelDB) Put(table string, k []byte, v []byte) error {
-	return db.inner.Put(KeyFor(table, k), v, defaultWriteOptions)
+	return db.inner.Put(keyFor(table, k), v, defaultWriteOptions)
 }
 
 // Delete deletes the value for the given key. Delete will not returns error if key doesn't exist.
 // Write merge also applies to Delete. See the doc comment on Put for more information.
 // It is safe to modify the contents of the arguments after Delete returns but not before.
 func (db *LevelDB) Delete(table string, k []byte) error {
-	return db.inner.Delete(KeyFor(table, k), defaultWriteOptions)
+	return db.inner.Delete(keyFor(table, k), defaultWriteOptions)
 }
 
 // Get all keys from start up to (but not including) end
 // Remember that the contents of the returned slice should not be modified, and
 // are only valid until the next call to Next.
-func (db *LevelDB) GetRange(table string, start []byte, end []byte) DbIterator {
+func (db *LevelDB) GetRange(table string, start []byte, end []byte) Iterator {
 	return db.inner.NewIterator(&util.Range{
-		Start: KeyFor(table, start),
-		Limit: KeyFor(table, end),
+		Start: keyFor(table, start),
+		Limit: keyFor(table, end),
 	}, defaultReadOptions)
 }
 
-// Combine a tablename and key into a single string
-func KeyFor(table string, key []byte) []byte {
+// Combine a tablename and key into a single string. Use the combined string
+// as the new key to work around the lack of tables in leveldb. This still allows
+// efficient iterations over 'tables', since level DB stores keys in sorted order
+func keyFor(table string, key []byte) []byte {
 	output := make([]byte, 0, len(table)+len(key))
 	output = append(output, []byte(table)...)
 	return append(output, key...)
