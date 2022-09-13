@@ -29,13 +29,13 @@ type SimpleDb interface {
 }
 type Iterator interface {
 	// First moves the iterator to the first key/value pair. If the iterator
-	// only contains one key/value pair then First and Last would move
+	// only contains one key/value pair then First and Last move
 	// to the same key/value pair.
 	// Returns false if and only if the iterator is empty
 	First() bool
 
 	// Last moves the iterator to the last key/value pair. If the iterator
-	// only contains one key/value pair then First and Last would moves
+	// only contains one key/value pair then First and Last move
 	// to the same key/value pair.
 	// Returns false if and only if the iterator is empty
 	Last() bool
@@ -72,7 +72,7 @@ type Iterator interface {
 
 type RangeDb interface {
 	SimpleDb
-	GetRange(table string, from []byte, to []byte) Iterator
+	GetRange(table string) Iterator
 }
 
 type MemDb struct {

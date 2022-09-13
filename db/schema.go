@@ -3,8 +3,6 @@ package db
 import (
 	"errors"
 	"fmt"
-	"math"
-	"regent/utils"
 	"strings"
 
 	"github.com/ledgerwatch/erigon/common"
@@ -24,7 +22,7 @@ var (
 	ERR_NOT_FOUND          = errors.New("the requested item could note be found in the database. requested: ")
 	ERR_EXHAUSTED          = errors.New("the iterator is exhausted")
 	ERR_PAST_HEAD          = errors.New("the requested block is beyond the tip of the known chain")
-	ERR_MISSING            = errors.New("the requested block was not found, but a more recent block was")
+	ERR_MISSING            = errors.New("the requested block was not found, but a more recent block was.")
 )
 
 // The error returned when an item could not be found in the database
@@ -45,15 +43,18 @@ func (e *NotFoundError) Is(err error) bool {
 	return strings.HasPrefix(err.Error(), ERR_NOT_FOUND.Error()) || errors.Is(err, ERR_NOT_FOUND)
 }
 
-// An iterator over all block hashes, ordered by height
+// An iterator over all block hashes, ordered by height.
+// The iterator may panic if the databse is empty, so callers should ensure
+// that the underlying database contains at least the Genesis block at all times
 type BlockHashIterator struct {
-	inner Iterator
+	inner    Iterator
+	position uint64
 }
 
 // Get a DbIterator over the rollup block hashes, ordered by block number
 func GetBlockHashIterator(db RangeDb) *BlockHashIterator {
 	iter := &BlockHashIterator{
-		inner: db.GetRange(RollupBlockNumberToHash, MarshalUint(0), MarshalUint(math.MaxUint64)),
+		inner: db.GetRange(RollupBlockNumberToHash),
 	}
 	iter.inner.First()
 	return iter
@@ -65,6 +66,7 @@ func (blocks *BlockHashIterator) Next() (common.Hash, error) {
 	if blocks.inner.Key() != nil {
 		res, err := UnmarshallHash(blocks.inner.Value())
 		blocks.inner.Next()
+		blocks.position += 1
 		return check(res, err), nil
 	}
 	return common.Hash{}, ERR_EXHAUSTED
@@ -73,26 +75,23 @@ func (blocks *BlockHashIterator) Next() (common.Hash, error) {
 // Return the current hash from the iterator, and move it back one spot
 // Returns an error if and only if the iterator is exhausted
 func (blocks *BlockHashIterator) Prev() (common.Hash, error) {
-	if blocks.inner.Key() != nil {
-		res, err := UnmarshallHash(blocks.inner.Value())
-		blocks.inner.Prev()
-		return check(res, err), nil
+	if blocks.position == 0 {
+		return common.Hash{}, ERR_EXHAUSTED
 	}
-	return common.Hash{}, ERR_EXHAUSTED
+	blocks.inner.Prev()
+	blocks.position -= 1
+	res, err := UnmarshallHash(blocks.inner.Value())
+	return check(res, err), nil
 }
 
-// Return the block number that the iterator is currently at, without moving the iterator
-// Returns an error if and only if the iterator is exhausted
-func (blocks *BlockHashIterator) CursorHeight() (uint64, error) {
-	if blocks.inner.Key() != nil {
-		return check(UnmarshallUint(blocks.inner.Key())), nil
-	}
-	return 0, ERR_EXHAUSTED
+// Return the block number of the hash that the iterator will yield next, without moving the iterator
+func (blocks *BlockHashIterator) Position() uint64 {
+	return uint64(blocks.position)
 }
 
 // Return the current hash from the iterator without moving the iterator
 // Returns an error if and only if the iterator is exhausted
-func (blocks *BlockHashIterator) CursorHash() (common.Hash, error) {
+func (blocks *BlockHashIterator) Peek() (common.Hash, error) {
 	if blocks.inner.Key() != nil {
 		return check(UnmarshallHash(blocks.inner.Value())), nil
 	}
@@ -101,44 +100,40 @@ func (blocks *BlockHashIterator) CursorHash() (common.Hash, error) {
 
 // Set the iterator to the latest block, and return its hash
 func (blocks *BlockHashIterator) HeadHash() common.Hash {
-	if !blocks.inner.Last() {
-		return utils.GENESIS_HASH
-	}
+	blocks.inner.Last()
+	pos := check(extractBlockNumFromKey(blocks.inner.Key()))
+	blocks.position = pos
 	return check(UnmarshallHash(blocks.inner.Value()))
 }
 
 // Set the iterator to the latest block, and return its number
 func (blocks *BlockHashIterator) HeadNumber() uint64 {
-	if !blocks.inner.Last() {
-		return 0
-	}
-	return check(UnmarshallUint(blocks.inner.Value()))
+	blocks.inner.Last()
+	pos := check(extractBlockNumFromKey(blocks.inner.Key()))
+	blocks.position = pos
+	return pos
 }
 
 // Set the iterator to the genesis block, and return its hash
-func (blocks *BlockHashIterator) Genesis() common.Hash {
-	if !blocks.inner.First() {
-		return utils.GENESIS_HASH
-	}
+func (blocks *BlockHashIterator) ResetToGenesis() common.Hash {
+	blocks.inner.First()
+	blocks.position = 0
 	return check(UnmarshallHash(blocks.inner.Value()))
 }
 
 // Set the iterator to the block at the provided height, and return its hash
 // Returns an error if the provided block number does not exist in the database
 func (blocks *BlockHashIterator) Seek(number uint64) (common.Hash, error) {
-	if number == 0 {
-		return utils.GENESIS_HASH, nil
-	}
-	if !blocks.inner.Seek(MarshalUint(number)) {
+	if !blocks.inner.Seek(keyFor(RollupBlockNumberToHash, MarshalUint(number))) {
 		return common.Hash{}, &NotFoundError{
 			inner: ERR_PAST_HEAD,
 			msg:   fmt.Sprintf("block %v was not found in the database. The latest block is only %v", number, blocks.HeadNumber()),
 		}
 	}
-	if check(UnmarshallUint(blocks.inner.Key())) != number {
+	if check(extractBlockNumFromKey(blocks.inner.Key())) != number {
 		return common.Hash{}, &NotFoundError{
 			inner: ERR_MISSING,
-			msg:   fmt.Sprintf("block %v was missing from the database. Found %v in its place.", number, check(UnmarshallUint(blocks.inner.Key()))),
+			msg:   fmt.Sprintf("block %v was missing from the database. Found %v in its place.", number, check(extractBlockNumFromKey(blocks.inner.Key()))),
 		}
 	}
 	return check(UnmarshallHash(blocks.inner.Value())), nil
@@ -175,4 +170,14 @@ func GetRollupBlockHash(db SimpleDb, blocknum uint64) (common.Hash, error) {
 		}
 	}
 	return UnmarshallHash(raw)
+}
+
+// Unmarshall a slice of 8 bytes into a uint64. Return an error
+// if the length of the slice is not equal to 8.
+// Uses BigEndian order
+func extractBlockNumFromKey(raw []byte) (uint64, error) {
+	if len(raw) < len(RollupBlockNumberToHash) {
+		return 0, fmt.Errorf("%s did not contain a valid block number with prefix %s. %w", raw, RollupBlockNumberToHash, ERR_INVALID_U64)
+	}
+	return UnmarshallUint(raw[len(RollupBlockNumberToHash):])
 }

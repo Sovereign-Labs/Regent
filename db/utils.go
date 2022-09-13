@@ -2,6 +2,7 @@ package db
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/log/v3"
@@ -18,7 +19,7 @@ func MarshalUint(num uint64) []byte {
 // Uses BigEndian order
 func UnmarshallUint(raw []byte) (uint64, error) {
 	if len(raw) != serializedUint64Len {
-		return 0, ERR_INVALID_U64
+		return 0, fmt.Errorf("slice had invalid length %v. %w", len(raw), ERR_INVALID_U64)
 	}
 	return binary.BigEndian.Uint64(raw), nil
 }

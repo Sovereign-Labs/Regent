@@ -1,6 +1,8 @@
 package db
 
 import (
+	"regent/utils"
+
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
@@ -27,7 +29,20 @@ func NewLevelDB(path string) (*LevelDB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &LevelDB{inner: db}, nil
+	return levelDbFromInner(db, nil)
+}
+
+func levelDbFromInner(db *leveldb.DB, err error) (*LevelDB, error) {
+	if err != nil {
+		return nil, err
+	}
+	output := &LevelDB{inner: db}
+	err = PutRollupBlockHashWithNumber(output, utils.GENESIS_HASH, 0)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	return output, nil
 }
 
 // Close closes the DB. This will also release any outstanding snapshots, abort any in-flight compaction, and discard any open transactions.
@@ -62,11 +77,8 @@ func (db *LevelDB) Delete(table string, k []byte) error {
 // Get all keys from start up to (but not including) end
 // Remember that the contents of the returned slice should not be modified, and
 // are only valid until the next call to Next.
-func (db *LevelDB) GetRange(table string, start []byte, end []byte) Iterator {
-	return db.inner.NewIterator(&util.Range{
-		Start: keyFor(table, start),
-		Limit: keyFor(table, end),
-	}, defaultReadOptions)
+func (db *LevelDB) GetRange(table string) Iterator {
+	return db.inner.NewIterator(util.BytesPrefix([]byte(table)), nil)
 }
 
 // Combine a tablename and key into a single string. Use the combined string
