@@ -140,6 +140,12 @@ func (blocks *BlockHashIterator) Seek(number uint64) (common.Hash, error) {
 	return unwrap(UnmarshallHash(blocks.inner.Value())), nil
 }
 
+// Cleans up any resources held by this iterator - typically a database snapshot
+// Callers must invoke this method before dropping the iterator
+func (blocks *BlockHashIterator) Release() {
+	blocks.inner.Release()
+}
+
 // Store a new rollup block hash in the database. Stores the mapping from hash->number and from number->hash
 func PutRollupBlockHashWithNumber(db SimpleDb, blockhash common.Hash, blocknumber uint64) error {
 	err := db.Put(RollupBlockHashToNumber, blockhash[:], MarshalUint(blocknumber))

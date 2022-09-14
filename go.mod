@@ -5,7 +5,9 @@ go 1.19
 require (
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/ledgerwatch/erigon v1.9.7-0.20220815114851-35c4faa1b41e
+	github.com/ledgerwatch/erigon-lib v0.0.0-20220814135647-e160c1ad9ca1
 	github.com/ledgerwatch/log/v3 v3.4.1
+	github.com/syndtr/goleveldb v1.0.0
 )
 
 require (
@@ -71,7 +73,6 @@ require (
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kevinburke/go-bindata v3.21.0+incompatible // indirect
-	github.com/ledgerwatch/erigon-lib v0.0.0-20220814135647-e160c1ad9ca1 // indirect
 	github.com/ledgerwatch/secp256k1 v1.0.0 // indirect
 	github.com/lispad/go-generics-tools v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -100,7 +101,6 @@ require (
 	github.com/quasilyte/go-ruleguard/dsl v0.3.21 // indirect
 	github.com/rs/dnscache v0.0.0-20211102005908-e0241e321417 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/syndtr/goleveldb v1.0.0 // indirect
 	github.com/tendermint/go-amino v0.14.1 // indirect
 	github.com/tendermint/tendermint v0.31.11 // indirect
 	github.com/tidwall/btree v1.3.1 // indirect

@@ -105,7 +105,7 @@ func TestIteratorOperations_emptyDb(t *testing.T) {
 	}
 	defer db.Close()
 	blocksIter := GetBlockHashIterator(db)
-	defer blocksIter.inner.Release()
+	defer blocksIter.Release()
 
 	// The genesis block should be equal to the head block
 	if blocksIter.JumpToGenesis() != blocksIter.JumpToHead() ||
@@ -174,7 +174,7 @@ func TestIteratorOperations_completeDb(t *testing.T) {
 	}
 
 	blocksIter := GetBlockHashIterator(db)
-	defer blocksIter.inner.Release()
+	defer blocksIter.Release()
 
 	// Check each method while iterating forwards
 	for idx, expected := range testHashes {
@@ -226,7 +226,7 @@ func TestBlocksIterator_withMissingValues(t *testing.T) {
 	}
 
 	blocksIter := GetBlockHashIterator(db)
-	defer blocksIter.inner.Release()
+	defer blocksIter.Release()
 
 	_, err = blocksIter.Seek(3)
 	if err == nil || !errors.Is(err, ERR_NOT_FOUND) || !errors.Is(err, ERR_MISSING) {
