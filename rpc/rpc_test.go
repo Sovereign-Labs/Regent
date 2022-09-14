@@ -70,10 +70,10 @@ func TestUpdateForkChoice_unexpectedEOF(t *testing.T) {
 func TestInfiniteRetryStrategy_isLinearWithCap(t *testing.T) {
 	var nextSleep time.Duration
 	s := InfiniteRetryStrategy{}
-	for i := 0; i <= 30; i++ {
+	for i := 0; i < 30; i++ {
 		nextSleep = s.Next()
-		if s.Done() || nextSleep != time.Duration(i)*time.Second {
-			t.Fatalf("Retry strategy failed: expected %d, got %d", time.Duration(i)*time.Second, nextSleep)
+		if s.Done() || nextSleep != time.Duration(i+1)*time.Second {
+			t.Fatalf("Retry strategy failed: expected %d, got %d", time.Duration(i+1)*time.Second, nextSleep)
 		}
 	}
 	nextSleep = s.Next()
