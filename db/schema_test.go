@@ -11,7 +11,15 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/storage"
 )
 
-func assertThrows[T any](f func() (T, error), expected error, t *testing.T) {
+var testHashes []common.Hash
+
+func init() {
+	for i := uint64(0); i < 10; i++ {
+		testHashes = append(testHashes, crypto.Keccak256Hash(MarshalUint(i)))
+	}
+}
+
+func assertErrs[T any](f func() (T, error), expected error, t *testing.T) {
 	_, err := f()
 	if !errors.Is(err, expected) {
 		t.Fatalf("function should have failed with %v but returned the following err: %v", expected, err)
@@ -89,6 +97,7 @@ func TestCrudOperations(t *testing.T) {
 	testCrud(db, crypto.Keccak256Hash(MarshalUint(100)), 100, t)
 }
 
+// Test that a fresh DB contains the genesis block and behaves as expected
 func TestIteratorOperations_emptyDb(t *testing.T) {
 	db, err := levelDbFromInner(leveldb.Open(storage.NewMemStorage(), nil))
 	if err != nil {
@@ -98,37 +107,54 @@ func TestIteratorOperations_emptyDb(t *testing.T) {
 	blocksIter := GetBlockHashIterator(db)
 	defer blocksIter.inner.Release()
 
-	if blocksIter.ResetToGenesis() != blocksIter.HeadHash() ||
+	// The genesis block should be equal to the head block
+	if blocksIter.Genesis() != blocksIter.Head() ||
 		blocksIter.HeadNumber() != 0 {
 		t.Fatal("empty database should return genesis as its head block")
 	}
-
+	// The first call to next should return the genesis block and move us to the `done` marker
 	res, err := blocksIter.Next()
 	if res != utils.GENESIS_HASH || err != nil {
 		t.Fatalf("Cursor should have been at the genesis block. failed with the following error: %s", err)
 	}
-	assertThrows(blocksIter.Next, ERR_EXHAUSTED, t)
+	// Any susbsequent calls to next should not move the cursor or return a value
+	assertErrs(blocksIter.Next, ERR_EXHAUSTED, t)
+	assertErrs(blocksIter.Next, ERR_EXHAUSTED, t)
+	if int(blocksIter.Position()) != 1 {
+		t.Fatalf("The cursor should not keep moving past the head of the chain. expected position: %v got: %v", 1, blocksIter.Position())
+	}
+
+	// The first call to Prev should get us back to the genesis block
 	res, err = blocksIter.Prev()
 	if res != utils.GENESIS_HASH || err != nil {
 		t.Fatalf("Cursor should have been at the genesis block. failed with the following error: %s", err)
 	}
-	assertThrows(blocksIter.Prev, ERR_EXHAUSTED, t)
+
+	// Any additional calls to Prev should should not move the cursor beyond the beginning of the array
+	assertErrs(blocksIter.Prev, ERR_EXHAUSTED, t)
+	assertErrs(blocksIter.Prev, ERR_EXHAUSTED, t)
+	if int(blocksIter.Position()) != 0 {
+		t.Fatalf("The cursor should not keep moving before the genesis block. expected position: %v got: %v", 0, blocksIter.Position())
+	}
 
 	res, err = blocksIter.Peek()
 	if res != utils.GENESIS_HASH || err != nil {
 		t.Fatalf("Cursor should have been at the genesis block. failed with the following error: %s", err)
 	}
 
+	// After calling peeek the cursor should be in the same place
 	blocknum := blocksIter.Position()
 	if blocknum != 0 {
 		t.Fatalf("Cursor should have been at height 0. failed with the following error: %s", err)
 	}
 
+	// Ensure that Seek is able to get us to the genesis block
 	res, err = blocksIter.Seek(0)
 	if res != utils.GENESIS_HASH || err != nil {
 		t.Fatalf("Seek 0 should always succeed, but failed with the following error: %s", err)
 	}
 
+	// Seeking the next block should fail
 	_, err = blocksIter.Seek(1)
 	if err == nil || !errors.Is(err, ERR_NOT_FOUND) || !errors.Is(err, ERR_PAST_HEAD) {
 		t.Fatalf("Seek 1 failed with the wrong error. expected: %v. got: %s", ERR_PAST_HEAD, err)
@@ -142,49 +168,88 @@ func TestIteratorOperations_completeDb(t *testing.T) {
 	}
 	defer db.Close()
 
-	for i := uint64(1); i < 10; i++ {
-		PutRollupBlockHashWithNumber(db, crypto.Keccak256Hash(MarshalUint(i)), i)
+	// Overwrite the genesis block and add some additional test hashes to the db
+	for i, hash := range testHashes {
+		PutRollupBlockHashWithNumber(db, hash, uint64(i))
 	}
 
 	blocksIter := GetBlockHashIterator(db)
 	defer blocksIter.inner.Release()
-	if blocksIter.ResetToGenesis() != check(blocksIter.Next()) {
-		t.Fatal("Iterator should return genesis block first")
-	}
 
-	for i := uint64(1); i < 10; i++ {
+	// Check each method while iterating forwards
+	for idx, expected := range testHashes {
+		i := uint64(idx)
 		if blocksIter.Position() != i {
 			t.Fatalf("Incorrect next height. expected %v. got %v", i, blocksIter.Position())
 		}
-		expected := crypto.Keccak256Hash(MarshalUint(i))
-		if check(blocksIter.Peek()) != expected {
-			t.Fatalf("Peek returned the wrong value. expected: %v. got: %v", expected, check(blocksIter.Peek()))
+		got := unwrap(blocksIter.Peek())
+		if got != expected {
+			t.Fatalf("Peek returned the wrong value. expected: %v. got: %v", expected, got)
 		}
-		if expected != check(blocksIter.Next()) {
-			t.Fatal("Peek and check must return the same value")
+		got = unwrap(blocksIter.Next())
+		if expected != got {
+			t.Fatalf("Peek and next must return the same value. expected: %v. got: %v", expected, got)
 		}
 	}
-	assertThrows(blocksIter.Next, ERR_EXHAUSTED, t)
-	assertThrows(blocksIter.Next, ERR_EXHAUSTED, t)
+	assertErrs(blocksIter.Next, ERR_EXHAUSTED, t)
+	assertErrs(blocksIter.Peek, ERR_EXHAUSTED, t)
 
-	for i := uint64(9); i > 0; i-- {
-		expected := crypto.Keccak256Hash(MarshalUint(i))
-		if blocksIter.Position() != i+1 {
+	// Check each method while iterating backwards
+	for i := uint64(len(testHashes)); i != 0; i-- {
+		expected := testHashes[i-1]
+		if blocksIter.Position() != i {
 			t.Fatalf("Incorrect next height. expected: %v. got: %v", i, blocksIter.Position())
 		}
-		got := check(blocksIter.Prev())
+		got := unwrap(blocksIter.Prev())
 		if got != expected {
 			t.Fatalf("i: %v. Prev returned the wrong value. expected: %v. got: %v", i, expected, got)
 		}
 	}
-	current := check(blocksIter.Prev())
-	if current != utils.GENESIS_HASH {
-		t.Fatalf("Iterator should be back to genesis, but was at position %v with hash %v", blocksIter.Position(), current)
+	assertErrs(blocksIter.Prev, ERR_EXHAUSTED, t)
+
+	got := unwrap(blocksIter.Peek())
+	if got != testHashes[0] {
+		t.Fatalf("Iterator should be back to genesis, but was at position %v with hash %v", blocksIter.Position(), got)
 	}
-	assertThrows(blocksIter.Prev, ERR_EXHAUSTED, t)
-	assertThrows(blocksIter.Prev, ERR_EXHAUSTED, t)
-	current = check(blocksIter.Next())
-	if current != utils.GENESIS_HASH {
-		t.Fatalf("Iterator should be back to genesis, but was at position %v with hash %v", blocksIter.Position(), current)
+}
+
+func TestBlocksIetartor_SeekMissingValue(t *testing.T) {
+	db, err := levelDbFromInner(leveldb.Open(storage.NewMemStorage(), nil))
+	if err != nil {
+		t.Fatal("unable to create test db in tempdir", err)
+	}
+	defer db.Close()
+
+	err = PutRollupBlockHashWithNumber(db, testHashes[5], 5)
+	if err != nil {
+		t.Fatal("insertion into an open db should succeed but failed with err:", err)
+	}
+
+	blocksIter := GetBlockHashIterator(db)
+	defer blocksIter.inner.Release()
+
+	_, err = blocksIter.Seek(3)
+	if err == nil || !errors.Is(err, ERR_NOT_FOUND) || !errors.Is(err, ERR_MISSING) {
+		t.Fatalf("seeking a missing block must return an error. expected: %v. got: %v.", ERR_MISSING, err)
+	}
+}
+
+func TestInsertIntoClosedDb(t *testing.T) {
+	db, err := levelDbFromInner(leveldb.Open(storage.NewMemStorage(), nil))
+	if err != nil {
+		t.Fatal("unable to create test db in tempdir", err)
+	}
+	db.Close()
+
+	err = PutRollupBlockHashWithNumber(db, utils.GENESIS_HASH, 0)
+	if err == nil {
+		t.Fatal("inserting into a closed db must throw")
+	}
+}
+
+func TestExtractBlockNumFromKey_notPrefixedWithKey(t *testing.T) {
+	_, err := extractBlockNumFromKey(make([]byte, 8))
+	if err == nil || !errors.Is(err, ERR_INVALID_U64) {
+		t.Fatalf("must not remove a non-existent prefix. expected err: %v. got %v", ERR_INVALID_U64, err)
 	}
 }

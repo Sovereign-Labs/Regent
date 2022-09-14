@@ -11,9 +11,6 @@ import (
 const (
 	RollupBlockNumberToHash = "RollupBlockNumberToHash"
 	RollupBlockHashToNumber = "RollupBlockHashToNumber"
-
-	serializedUint64Len = 8
-	serializedHashLen   = 32
 )
 
 var (
@@ -43,9 +40,9 @@ func (e *NotFoundError) Is(err error) bool {
 	return strings.HasPrefix(err.Error(), ERR_NOT_FOUND.Error()) || errors.Is(err, ERR_NOT_FOUND)
 }
 
-// An iterator over all block hashes, ordered by height.
+// An double-ended iterator over all block hashes, ordered by height.
 // The iterator may panic if the databse is empty, so callers should ensure
-// that the underlying database contains at least the Genesis block at all times
+// that the underlying database contains at least the Genesis block at all times.
 type BlockHashIterator struct {
 	inner    Iterator
 	position uint64
@@ -67,7 +64,7 @@ func (blocks *BlockHashIterator) Next() (common.Hash, error) {
 		res, err := UnmarshallHash(blocks.inner.Value())
 		blocks.inner.Next()
 		blocks.position += 1
-		return check(res, err), nil
+		return unwrap(res, err), nil
 	}
 	return common.Hash{}, ERR_EXHAUSTED
 }
@@ -81,7 +78,7 @@ func (blocks *BlockHashIterator) Prev() (common.Hash, error) {
 	blocks.inner.Prev()
 	blocks.position -= 1
 	res, err := UnmarshallHash(blocks.inner.Value())
-	return check(res, err), nil
+	return unwrap(res, err), nil
 }
 
 // Return the block number of the hash that the iterator will yield next, without moving the iterator
@@ -93,36 +90,36 @@ func (blocks *BlockHashIterator) Position() uint64 {
 // Returns an error if and only if the iterator is exhausted
 func (blocks *BlockHashIterator) Peek() (common.Hash, error) {
 	if blocks.inner.Key() != nil {
-		return check(UnmarshallHash(blocks.inner.Value())), nil
+		return unwrap(UnmarshallHash(blocks.inner.Value())), nil
 	}
 	return common.Hash{}, ERR_EXHAUSTED
 }
 
 // Set the iterator to the latest block, and return its hash
-func (blocks *BlockHashIterator) HeadHash() common.Hash {
+func (blocks *BlockHashIterator) Head() common.Hash {
 	blocks.inner.Last()
-	pos := check(extractBlockNumFromKey(blocks.inner.Key()))
+	pos := unwrap(extractBlockNumFromKey(blocks.inner.Key()))
 	blocks.position = pos
-	return check(UnmarshallHash(blocks.inner.Value()))
+	return unwrap(UnmarshallHash(blocks.inner.Value()))
 }
 
 // Set the iterator to the latest block, and return its number
 func (blocks *BlockHashIterator) HeadNumber() uint64 {
 	blocks.inner.Last()
-	pos := check(extractBlockNumFromKey(blocks.inner.Key()))
+	pos := unwrap(extractBlockNumFromKey(blocks.inner.Key()))
 	blocks.position = pos
 	return pos
 }
 
 // Set the iterator to the genesis block, and return its hash
-func (blocks *BlockHashIterator) ResetToGenesis() common.Hash {
+func (blocks *BlockHashIterator) Genesis() common.Hash {
 	blocks.inner.First()
 	blocks.position = 0
-	return check(UnmarshallHash(blocks.inner.Value()))
+	return unwrap(UnmarshallHash(blocks.inner.Value()))
 }
 
 // Set the iterator to the block at the provided height, and return its hash
-// Returns an error if the provided block number does not exist in the database
+// Returns an error only if the provided block number does not exist in the database
 func (blocks *BlockHashIterator) Seek(number uint64) (common.Hash, error) {
 	if !blocks.inner.Seek(keyFor(RollupBlockNumberToHash, MarshalUint(number))) {
 		return common.Hash{}, &NotFoundError{
@@ -130,13 +127,13 @@ func (blocks *BlockHashIterator) Seek(number uint64) (common.Hash, error) {
 			msg:   fmt.Sprintf("block %v was not found in the database. The latest block is only %v", number, blocks.HeadNumber()),
 		}
 	}
-	if check(extractBlockNumFromKey(blocks.inner.Key())) != number {
+	if unwrap(extractBlockNumFromKey(blocks.inner.Key())) != number {
 		return common.Hash{}, &NotFoundError{
 			inner: ERR_MISSING,
-			msg:   fmt.Sprintf("block %v was missing from the database. Found %v in its place.", number, check(extractBlockNumFromKey(blocks.inner.Key()))),
+			msg:   fmt.Sprintf("block %v was missing from the database. Found %v in its place.", number, unwrap(extractBlockNumFromKey(blocks.inner.Key()))),
 		}
 	}
-	return check(UnmarshallHash(blocks.inner.Value())), nil
+	return unwrap(UnmarshallHash(blocks.inner.Value())), nil
 }
 
 // Store a new rollup block hash in the database. Stores the mapping from hash->number and from number->hash
@@ -172,9 +169,8 @@ func GetRollupBlockHash(db SimpleDb, blocknum uint64) (common.Hash, error) {
 	return UnmarshallHash(raw)
 }
 
-// Unmarshall a slice of 8 bytes into a uint64. Return an error
-// if the length of the slice is not equal to 8.
-// Uses BigEndian order
+// Remove the tablename prefix from a key in the `RollupBlockNumberToHash` table,
+// then unmarshall the remaining bytes as a blocknumber
 func extractBlockNumFromKey(raw []byte) (uint64, error) {
 	if len(raw) < len(RollupBlockNumberToHash) {
 		return 0, fmt.Errorf("%s did not contain a valid block number with prefix %s. %w", raw, RollupBlockNumberToHash, ERR_INVALID_U64)
