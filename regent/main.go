@@ -6,7 +6,6 @@ import (
 	"regent/utils"
 	"time"
 
-	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/log/v3"
 )
 
@@ -20,9 +19,9 @@ func main() {
 	defer regent.DB.Close()
 
 	// Finalize the genesis block and start the building process
-	err = regent.ExtendChainAndStartBuilder(common.HexToHash(utils.GENESIS_HASH_STRING), utils.DEV_ADDRESS)
+	err = regent.ExtendChainAndStartBuilder(regent.CurrentHead, utils.DEV_ADDRESS)
 	if err != nil {
-		log.Crit("Could not finalize genesis block", "err", err)
+		log.Crit("Could not start building on current head", "err", err)
 		os.Exit(1)
 	}
 	// Wait for one second to ensure that the next payload builds with a future timestamp
