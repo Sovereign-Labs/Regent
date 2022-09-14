@@ -44,8 +44,9 @@ func (e *NotFoundError) Is(err error) bool {
 // The iterator may panic if the databse is empty, so callers should ensure
 // that the underlying database contains at least the Genesis block at all times.
 type BlockHashIterator struct {
-	inner    Iterator
-	position uint64
+	inner      Iterator
+	atHead     bool
+	headHeight uint64
 }
 
 // Get a DbIterator over the rollup block hashes, ordered by block number
@@ -53,6 +54,8 @@ func GetBlockHashIterator(db RangeDb) *BlockHashIterator {
 	iter := &BlockHashIterator{
 		inner: db.GetRange(RollupBlockNumberToHash),
 	}
+	iter.inner.Last()
+	iter.headHeight = unwrap(extractBlockNumFromKey(iter.inner.Key()))
 	iter.inner.First()
 	return iter
 }
@@ -62,8 +65,7 @@ func GetBlockHashIterator(db RangeDb) *BlockHashIterator {
 func (blocks *BlockHashIterator) Next() (common.Hash, error) {
 	if blocks.inner.Key() != nil {
 		res, err := UnmarshallHash(blocks.inner.Value())
-		blocks.inner.Next()
-		blocks.position += 1
+		blocks.atHead = !blocks.inner.Next()
 		return unwrap(res, err), nil
 	}
 	return common.Hash{}, ERR_EXHAUSTED
@@ -72,49 +74,49 @@ func (blocks *BlockHashIterator) Next() (common.Hash, error) {
 // Return the current hash from the iterator, and move it back one spot
 // Returns an error if and only if the iterator is exhausted
 func (blocks *BlockHashIterator) Prev() (common.Hash, error) {
-	if blocks.position == 0 {
+	blocks.atHead = false
+	if !blocks.inner.Prev() {
+		blocks.inner.First()
 		return common.Hash{}, ERR_EXHAUSTED
 	}
-	blocks.inner.Prev()
-	blocks.position -= 1
 	res, err := UnmarshallHash(blocks.inner.Value())
 	return unwrap(res, err), nil
 }
 
 // Return the block number of the hash that the iterator will yield next, without moving the iterator
+// If the iterator is at the end of its range, this will return a number one greater than the head height
 func (blocks *BlockHashIterator) Position() uint64 {
-	return uint64(blocks.position)
+	if blocks.atHead {
+		return blocks.headHeight + 1
+	}
+	return unwrap(extractBlockNumFromKey(blocks.inner.Key()))
 }
 
 // Return the current hash from the iterator without moving the iterator
 // Returns an error if and only if the iterator is exhausted
 func (blocks *BlockHashIterator) Peek() (common.Hash, error) {
-	if blocks.inner.Key() != nil {
+	if !blocks.atHead {
 		return unwrap(UnmarshallHash(blocks.inner.Value())), nil
 	}
 	return common.Hash{}, ERR_EXHAUSTED
 }
 
 // Set the iterator to the latest block, and return its hash
-func (blocks *BlockHashIterator) Head() common.Hash {
+func (blocks *BlockHashIterator) JumpToHead() common.Hash {
 	blocks.inner.Last()
-	pos := unwrap(extractBlockNumFromKey(blocks.inner.Key()))
-	blocks.position = pos
+	blocks.atHead = true
 	return unwrap(UnmarshallHash(blocks.inner.Value()))
 }
 
-// Set the iterator to the latest block, and return its number
-func (blocks *BlockHashIterator) HeadNumber() uint64 {
-	blocks.inner.Last()
-	pos := unwrap(extractBlockNumFromKey(blocks.inner.Key()))
-	blocks.position = pos
-	return pos
+// Return the block height of the largest block contained in this iterator
+func (blocks *BlockHashIterator) MaxHeight() uint64 {
+	return blocks.headHeight
 }
 
 // Set the iterator to the genesis block, and return its hash
-func (blocks *BlockHashIterator) Genesis() common.Hash {
+func (blocks *BlockHashIterator) JumpToGenesis() common.Hash {
 	blocks.inner.First()
-	blocks.position = 0
+	blocks.atHead = false
 	return unwrap(UnmarshallHash(blocks.inner.Value()))
 }
 
@@ -122,15 +124,17 @@ func (blocks *BlockHashIterator) Genesis() common.Hash {
 // Returns an error only if the provided block number does not exist in the database
 func (blocks *BlockHashIterator) Seek(number uint64) (common.Hash, error) {
 	if !blocks.inner.Seek(keyFor(RollupBlockNumberToHash, MarshalUint(number))) {
+		blocks.atHead = true
 		return common.Hash{}, &NotFoundError{
 			inner: ERR_PAST_HEAD,
-			msg:   fmt.Sprintf("block %v was not found in the database. The latest block is only %v", number, blocks.HeadNumber()),
+			msg:   fmt.Sprintf("block %v was not found in the database. The latest block is only %v", number, blocks.MaxHeight()),
 		}
 	}
-	if unwrap(extractBlockNumFromKey(blocks.inner.Key())) != number {
+	newPosition := unwrap(extractBlockNumFromKey(blocks.inner.Key()))
+	if newPosition != number {
 		return common.Hash{}, &NotFoundError{
 			inner: ERR_MISSING,
-			msg:   fmt.Sprintf("block %v was missing from the database. Found %v in its place.", number, unwrap(extractBlockNumFromKey(blocks.inner.Key()))),
+			msg:   fmt.Sprintf("block %v was missing from the database. Found %v in its place.", number, newPosition),
 		}
 	}
 	return unwrap(UnmarshallHash(blocks.inner.Value())), nil

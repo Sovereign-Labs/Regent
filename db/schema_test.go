@@ -108,8 +108,8 @@ func TestIteratorOperations_emptyDb(t *testing.T) {
 	defer blocksIter.inner.Release()
 
 	// The genesis block should be equal to the head block
-	if blocksIter.Genesis() != blocksIter.Head() ||
-		blocksIter.HeadNumber() != 0 {
+	if blocksIter.JumpToGenesis() != blocksIter.JumpToHead() ||
+		blocksIter.MaxHeight() != 0 {
 		t.Fatal("empty database should return genesis as its head block")
 	}
 	// The first call to next should return the genesis block and move us to the `done` marker
@@ -213,7 +213,7 @@ func TestIteratorOperations_completeDb(t *testing.T) {
 	}
 }
 
-func TestBlocksIetartor_SeekMissingValue(t *testing.T) {
+func TestBlocksIterator_withMissingValues(t *testing.T) {
 	db, err := levelDbFromInner(leveldb.Open(storage.NewMemStorage(), nil))
 	if err != nil {
 		t.Fatal("unable to create test db in tempdir", err)
@@ -231,6 +231,18 @@ func TestBlocksIetartor_SeekMissingValue(t *testing.T) {
 	_, err = blocksIter.Seek(3)
 	if err == nil || !errors.Is(err, ERR_NOT_FOUND) || !errors.Is(err, ERR_MISSING) {
 		t.Fatalf("seeking a missing block must return an error. expected: %v. got: %v.", ERR_MISSING, err)
+	}
+
+	if blocksIter.Position() != 5 {
+		t.Fatalf("wrong position! expected: %v. got: %v.", 5, blocksIter.Position())
+	}
+	blocksIter.Prev()
+	if blocksIter.Position() != 0 {
+		t.Fatalf("wrong position! expected: %v. got: %v.", 0, blocksIter.Position())
+	}
+	blocksIter.Next()
+	if blocksIter.Position() != 5 {
+		t.Fatalf("wrong position! expected: %v. got: %v.", 5, blocksIter.Position())
 	}
 }
 
