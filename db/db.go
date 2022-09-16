@@ -68,6 +68,6 @@ type Iterator interface {
 }
 
 type RangeDb interface {
-	SimpleDb
+	BatchDb
 	GetRange(table string) Iterator
 }
