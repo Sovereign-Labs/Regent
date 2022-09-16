@@ -3,7 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
-	"path"
+	"regent/config"
+	"regent/db"
 	"regent/rpc"
 	"regent/rpc/jwt"
 	"time"
@@ -15,7 +16,7 @@ import (
 )
 
 var (
-	ERR_INVALID_PAYLOAD_STATUS   = errors.New("The Payload status was not a valid option. This indicates a client bug")
+	ERR_INVALID_PAYLOAD_STATUS   = errors.New("the Payload status was not a valid option. This indicates a client bug")
 	ERR_INVALID_PAYLOAD          = errors.New("the execution client was unable to build a block because the fork choice update payload was invalid")
 	ERR_EXECUTION_CLIENT_SYNCING = errors.New("the execution client was unable to build a block because it is syncing")
 	ERR_INVALID_PAYLOAD_ID       = errors.New("the execution client returned an invalid payload ID")
@@ -65,19 +66,39 @@ func (e *PayloadBuildError) Unwrap() error {
 
 type Regent struct {
 	CurrentHead        common.Hash
+	BlockNumber        uint64
 	NextPayloadId      string
 	EngineRpc          rpc.Client
 	BeneficiaryAddress common.Address
+	DB                 db.RangeDb
+	Config             *config.Config
 }
 
 func Initialize() (*Regent, error) {
-	r := &Regent{}
-	r.EngineRpc = rpc.NewClient(EngineRpcPort)
-	token, err := jwt.FromSecretFile(path.Join(ErigonDatadir, JWT_SECRET_FILENAME))
+	r := &Regent{
+		Config: config.New(),
+	}
+
+	// Initialize the Engine RPC
+	r.EngineRpc = rpc.NewClient(r.Config.EngineRpcPort)
+	token, err := jwt.FromSecretFile(r.Config.JwtSecretPath)
 	if err != nil {
 		return nil, err
 	}
 	r.EngineRpc.SetAuthToken(token)
+
+	// Open the DB
+	r.DB, err = db.NewLevelDB(r.Config.RegentDatadir)
+	if err != nil {
+		return nil, err
+	}
+
+	// Retrieve the latest block number and hash from the DB
+	blockIterator := db.GetBlockHashIterator(r.DB)
+	r.CurrentHead = blockIterator.JumpToHead()
+	r.BlockNumber = blockIterator.MaxHeight()
+	blockIterator.Release()
+
 	return r, nil
 }
 
@@ -176,6 +197,11 @@ func validateForkChoiceUpdate(err error, result *rpc.ForkChoiceUpdatedResult, ne
 // Add a new block to the chain using engine_forkChoiceUpdated. Re-orgs are impossible,
 // so the last finalized block is just the previous head
 func (r *Regent) ExtendChainAndStartBuilder(newHead common.Hash, suggestedRecipient common.Address) error {
+	err := db.PutRollupBlockHashWithNumber(r.DB, newHead, uint64(r.BlockNumber)+1)
+	if err != nil {
+		return err
+	}
+	r.BlockNumber += 1
 	return r.tryExtendChainAndStartBuilder(newHead, suggestedRecipient)
 }
 

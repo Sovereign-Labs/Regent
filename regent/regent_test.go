@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"regent/db"
 	"regent/rpc"
 	"regent/utils"
 	"regent/utils/test"
@@ -19,9 +20,12 @@ var TestRegent Regent
 func init() {
 	TestRpcClient.Endpoint = test.TestServer.URL
 	rpc.DefaultRetryStrategy = func() rpc.RetryStrategy { return &test.NoRetryStrategy{} }
+	leveldb, _ := db.InMemoryDb()
 	TestRegent = Regent{
 		EngineRpc: TestRpcClient,
+		DB:        leveldb,
 	}
+	db.PutRollupBlockHashWithNumber(leveldb, utils.GENESIS_HASH, 0)
 }
 
 func TestExtendChainAndStartBuilder_successResponse(t *testing.T) {
