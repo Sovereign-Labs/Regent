@@ -88,6 +88,21 @@ func (db *LevelDB) GetRange(table string) Iterator {
 	return db.inner.NewIterator(util.BytesPrefix([]byte(table)), nil)
 }
 
+// Get all keys from start up to (but not including) end
+// Remember that the contents of the returned slice should not be modified, and
+// are only valid until the next call to Next.
+func (db *LevelDB) WriteBatched(items []struct {
+	table string
+	key   []byte
+	val   []byte
+}) error {
+	b := new(leveldb.Batch)
+	for _, item := range items {
+		b.Put(keyFor(item.table, item.key), item.val)
+	}
+	return db.inner.Write(b, defaultWriteOptions)
+}
+
 // Combine a tablename and key into a single string. Use the combined string
 // as the new key to work around the lack of tables in leveldb. This still allows
 // efficient iterations over 'tables', since level DB stores keys in sorted order

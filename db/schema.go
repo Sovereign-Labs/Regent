@@ -147,12 +147,16 @@ func (blocks *BlockHashIterator) Release() {
 }
 
 // Store a new rollup block hash in the database. Stores the mapping from hash->number and from number->hash
-func PutRollupBlockHashWithNumber(db SimpleDb, blockhash common.Hash, blocknumber uint64) error {
-	err := db.Put(RollupBlockHashToNumber, blockhash[:], MarshalUint(blocknumber))
-	if err != nil {
-		return err
+func PutRollupBlockHashWithNumber(db BatchDb, blockhash common.Hash, blocknumber uint64) error {
+	batch := []struct {
+		table string
+		key   []byte
+		val   []byte
+	}{
+		{RollupBlockHashToNumber, blockhash[:], MarshalUint(blocknumber)},
+		{RollupBlockNumberToHash, MarshalUint(blocknumber), blockhash[:]},
 	}
-	return db.Put(RollupBlockNumberToHash, MarshalUint(blocknumber), blockhash[:])
+	return db.WriteBatched(batch)
 }
 
 // Looks up the block number corresponding to the provided hash in the database

@@ -14,6 +14,16 @@ type SimpleDb interface {
 	kv.Deleter
 	kv.Closer
 }
+
+type BatchDb interface {
+	SimpleDb
+	WriteBatched([]struct {
+		table string
+		key   []byte
+		val   []byte
+	}) error
+}
+
 type Iterator interface {
 	// First moves the iterator to the first key/value pair. If the iterator
 	// only contains one key/value pair then First and Last move

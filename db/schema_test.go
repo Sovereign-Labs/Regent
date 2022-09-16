@@ -63,7 +63,7 @@ func testDelete(db SimpleDb, hash common.Hash, number uint64, t *testing.T) {
 	}
 }
 
-func testCrud(db SimpleDb, hash common.Hash, number uint64, t *testing.T) {
+func testCrud(db BatchDb, hash common.Hash, number uint64, t *testing.T) {
 	// Insert the items and read them back
 	err := PutRollupBlockHashWithNumber(db, hash, number)
 	if err != nil {
