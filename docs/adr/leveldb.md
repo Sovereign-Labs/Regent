@@ -15,7 +15,7 @@ Like all blockchain clients, Regent will require a database to persist informati
 - A mapping from DA block number to DA block hash
 - A mapping from DA block hash to DA block number
 - A mapping from DA block hash to DA block data
-- A mapping from DA block hash to the Intermediate merkle hashes needed to validate the rollup data using the namespaced merkle tree
+- A mapping from DA block hash to the intermediate merkle hashes needed to validate the rollup data using the namespaced merkle tree
 - A mapping from rollup block number to rollup block hash
 - A mapping from rollup block hash to rollup block data
 - A mapping from rollup block number to rollup block hash

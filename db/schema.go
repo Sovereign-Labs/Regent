@@ -41,7 +41,7 @@ func (e *NotFoundError) Is(err error) bool {
 }
 
 // An double-ended iterator over all block hashes, ordered by height.
-// The iterator may panic if the databse is empty, so callers should ensure
+// The iterator may panic if the database is empty, so callers should ensure
 // that the underlying database contains at least the Genesis block at all times.
 type BlockHashIterator struct {
 	inner      Iterator

@@ -74,7 +74,7 @@ func (db *LevelDB) Put(table string, k []byte, v []byte) error {
 	return db.inner.Put(keyFor(table, k), v, defaultWriteOptions)
 }
 
-// Delete deletes the value for the given key. Delete will not returns error if key doesn't exist.
+// Delete deletes the value for the given key. Delete will not return error if key doesn't exist.
 // Write merge also applies to Delete. See the doc comment on Put for more information.
 // It is safe to modify the contents of the arguments after Delete returns but not before.
 func (db *LevelDB) Delete(table string, k []byte) error {
